@@ -14,6 +14,7 @@ class GoodweAiAdapter extends utils.Adapter {
         this.reconnectTimer = null;
         this.isConnected = false;
         this.isPolling = false;
+        this.unloaded = false;
         this.reconnectAttempts = 0;
         this.maxReconnectAttempts = 10;
 
@@ -133,14 +134,16 @@ class GoodweAiAdapter extends utils.Adapter {
     }
 
     async poll() {
-        if (this.isPolling || !this.isConnected) return;
+        if (this.unloaded || this.isPolling || !this.isConnected) return;
         this.isPolling = true;
 
         try {
             await this.readAllRegisters();
+            if (this.unloaded) return;
             await this.calculateDerivedValues();
             this.setState('info.lastUpdate', new Date().toISOString(), true);
         } catch (err) {
+            if (this.unloaded) return;
             this.log.error(`Polling error: ${err.message}`);
             this.isConnected = false;
             this.setState('info.connection', false, true);
@@ -165,6 +168,7 @@ class GoodweAiAdapter extends utils.Adapter {
         ];
 
         for (const block of blocks) {
+            if (this.unloaded) return;
             const regsInBlock = Object.values(REGISTERS)
                 .filter(r => r.address >= block.start && r.address < block.start + block.count);
             if (regsInBlock.length === 0) continue;
@@ -174,6 +178,7 @@ class GoodweAiAdapter extends utils.Adapter {
                 const result = await this.modbusClient.readHoldingRegisters(block.start, block.count);
                 await this.processRegisters(regsInBlock, result.data, block.start);
             } catch (err) {
+                if (this.unloaded) return; // adapter is shutting down, the closed socket is expected
                 this.log.warn(`Fehler beim Lesen ${block.label} (${block.start}): ${err.message}`);
             }
             await this.sleep(300);
@@ -320,6 +325,7 @@ class GoodweAiAdapter extends utils.Adapter {
     }
 
     async onUnload(callback) {
+        this.unloaded = true;
         try {
             if (this.pollingTimer) clearInterval(this.pollingTimer);
             if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
