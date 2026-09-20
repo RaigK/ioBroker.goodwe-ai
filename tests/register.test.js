@@ -40,6 +40,14 @@ describe('Goodwe Register Map', () => {
         expect(soc.unit).to.equal('%');
     });
 
+    it('min/max are only set on number registers (js-controller rejects them on strings)', () => {
+        for (const [key, reg] of Object.entries(REGISTERS)) {
+            if (reg.min !== undefined || reg.max !== undefined) {
+                expect(reg.type || 'number', `Register ${key} has min/max`).to.equal('number');
+            }
+        }
+    });
+
     it('writable registers should have min/max or states', () => {
         for (const [key, reg] of Object.entries(REGISTERS)) {
             if (reg.writable && reg.type === 'number') {
