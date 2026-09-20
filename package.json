@@ -1,16 +1,17 @@
 {
-  "name": "iobroker.goodwe",
-  "version": "0.2.1",
+  "name": "iobroker.goodwe-ai",
+  "version": "0.3.0",
   "description": "ioBroker adapter for Goodwe inverters (GW10K-ET and compatible) via Modbus TCP",
   "author": {
     "name": "ioBroker Community",
     "email": ""
   },
-  "homepage": "https://github.com/iobroker-community/ioBroker.goodwe",
+  "homepage": "https://github.com/RaigK/ioBroker.goodwe-ai",
   "license": "MIT",
   "keywords": [
     "ioBroker",
     "goodwe",
+    "goodwe-ai",
     "inverter",
     "solar",
     "modbus",
@@ -20,7 +21,7 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/RaigK/ioBroker.goodwe"
+    "url": "https://github.com/RaigK/ioBroker.goodwe-ai"
   },
   "engines": {
     "node": ">=18"

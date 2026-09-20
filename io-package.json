@@ -1,8 +1,12 @@
 {
   "common": {
-    "name": "goodwe",
-    "version": "0.2.1",
+    "name": "goodwe-ai",
+    "version": "0.3.0",
     "news": {
+      "0.3.0": {
+        "en": "BREAKING: adapter renamed from 'goodwe' to 'goodwe-ai'. Object IDs move from goodwe.0.* to goodwe-ai.0.*; scripts, VIS views and history/InfluxDB logging must be repointed by hand. The old instance is not migrated automatically — install the new adapter, reconfigure the instance and remove the old one. Also fixes the UDP transport mistaking a late or duplicate Wi-Fi-Kit reply for the answer to the current request.",
+        "de": "BREAKING: Adapter von 'goodwe' in 'goodwe-ai' umbenannt. Objekt-IDs wandern von goodwe.0.* nach goodwe-ai.0.*; Skripte, VIS-Views und History-/InfluxDB-Logging müssen von Hand umgestellt werden. Die alte Instanz wird nicht automatisch migriert — neuen Adapter installieren, Instanz neu konfigurieren und die alte entfernen. Außerdem behoben: der UDP-Transport hielt verspätete oder doppelte Wi-Fi-Kit-Antworten für die Antwort auf den aktuellen Request."
+      },
       "0.2.1": {
         "en": "UDP 8899 transport verified end-to-end against a live GW10K-ET with the old Wi-Fi-Kit dongle (firmware V1.0.3.8). All states populate; no code changes since 0.2.0.",
         "de": "UDP 8899 Transport End-to-End gegen einen GW10K-ET mit altem Wi-Fi-Kit Dongle (Firmware V1.0.3.8) verifiziert. Alle States werden befüllt; keine Code-Änderungen gegenüber 0.2.0."
@@ -28,25 +32,25 @@
         "de": "Erste Version mit Modbus TCP Unterstützung für Goodwe ET-Serien-Wechselrichter"
       }
     },
-    "title": "Goodwe Inverter",
+    "title": "Goodwe-AI Inverter",
     "titleLang": {
-      "en": "Goodwe Inverter (Modbus TCP)",
-      "de": "Goodwe Wechselrichter (Modbus TCP)"
+      "en": "Goodwe-AI Inverter (Modbus TCP)",
+      "de": "Goodwe-AI Wechselrichter (Modbus TCP)"
     },
     "desc": {
       "en": "Adapter for Goodwe inverters (GW10K-ET and ET/EH/BT series) via Modbus TCP. Reads PV production, battery, grid, and load data.",
       "de": "Adapter für Goodwe Wechselrichter (GW10K-ET und ET/EH/BT Serien) via Modbus TCP. Liest PV-Produktion, Batterie-, Netz- und Verbrauchsdaten."
     },
-    "icon": "admin/goodwe.png",
-    "extIcon": "https://raw.githubusercontent.com/iobroker-community/ioBroker.goodwe/main/admin/goodwe.png",
+    "icon": "admin/goodwe-ai.png",
+    "extIcon": "https://raw.githubusercontent.com/RaigK/ioBroker.goodwe-ai/main/admin/goodwe-ai.png",
     "authors": ["ioBroker Community"],
-    "keywords": ["goodwe", "inverter", "solar", "modbus", "battery", "energy"],
+    "keywords": ["goodwe", "goodwe-ai", "inverter", "solar", "modbus", "battery", "energy"],
     "license": "MIT",
     "platform": "Javascript/Node.js",
     "mode": "daemon",
     "type": "energy",
     "enabled": true,
-    "readme": "https://github.com/iobroker-community/ioBroker.goodwe/blob/main/README.md",
+    "readme": "https://github.com/RaigK/ioBroker.goodwe-ai/blob/main/README.md",
     "loglevel": "info",
     "supportStopInstance": true,
     "allowInit": true,

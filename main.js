@@ -5,9 +5,9 @@ const ModbusRTU = require('modbus-serial');
 const { GoodweUdpClient } = require('./lib/transport-udp');
 const { REGISTERS, REGISTER_GROUPS } = require('./lib/registers');
 
-class GoodweAdapter extends utils.Adapter {
+class GoodweAiAdapter extends utils.Adapter {
     constructor(options) {
-        super({ ...options, name: 'goodwe' });
+        super({ ...options, name: 'goodwe-ai' });
 
         this.modbusClient = null;
         this.pollingTimer = null;
@@ -23,7 +23,7 @@ class GoodweAdapter extends utils.Adapter {
     }
 
     async onReady() {
-        this.log.info('Goodwe adapter starting...');
+        this.log.info('goodwe-ai adapter starting...');
         this.setState('info.connection', false, true);
 
         await this.createObjects();
@@ -335,7 +335,7 @@ class GoodweAdapter extends utils.Adapter {
 }
 
 if (require.main !== module) {
-    module.exports = (options) => new GoodweAdapter(options);
+    module.exports = (options) => new GoodweAiAdapter(options);
 } else {
-    new GoodweAdapter();
+    new GoodweAiAdapter();
 }

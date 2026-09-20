@@ -1,6 +1,6 @@
-# ioBroker.goodwe
+# ioBroker.goodwe-ai
 
-[![NPM version](https://img.shields.io/npm/v/iobroker.goodwe.svg)](https://www.npmjs.com/package/iobroker.goodwe)
+[![NPM version](https://img.shields.io/npm/v/iobroker.goodwe-ai.svg)](https://www.npmjs.com/package/iobroker.goodwe-ai)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 Adapter für **Goodwe** Wechselrichter (ET/EH/BT-Serien) über **Modbus TCP**. Portiert vom [goodwe Python-Adapter für Home Assistant](https://github.com/marcelblijleven/goodwe).
@@ -34,10 +34,53 @@ Adapter für **Goodwe** Wechselrichter (ET/EH/BT-Serien) über **Modbus TCP**. P
 
 ```bash
 cd /opt/iobroker
-npm install iobroker.goodwe
+npm install iobroker.goodwe-ai
 ```
 
-Oder über die ioBroker Admin-Oberfläche: Adapter → + → „goodwe".
+Oder über die ioBroker Admin-Oberfläche: Adapter → + → „goodwe-ai".
+
+---
+
+## Migration von `goodwe.0.*` nach `goodwe-ai.0.*`
+
+Ab Version 0.3.0 heißt der Adapter **`goodwe-ai`** (vorher `goodwe`). Der Adaptername bildet in
+ioBroker den Namensraum aller Objekte — dadurch ändern sich **sämtliche Objekt-IDs**:
+
+| vorher | nachher |
+|--------|---------|
+| `goodwe.0.pv.pv_sum` | `goodwe-ai.0.pv.pv_sum` |
+| `goodwe.0.bms.battery_soc` | `goodwe-ai.0.bms.battery_soc` |
+| `goodwe.0.settings.work_mode_set` | `goodwe-ai.0.settings.work_mode_set` |
+| `goodwe.0.*` | `goodwe-ai.0.*` |
+
+**ioBroker migriert die alte Instanz nicht automatisch.** Alte und neue Instanz sind für ioBroker
+zwei völlig verschiedene Adapter; die Objekte unter `goodwe.0.*` bleiben stehen, werden aber nicht
+mehr aktualisiert.
+
+### Was angepasst werden muss
+
+Alles, was `goodwe.0.*` referenziert, muss auf `goodwe-ai.0.*` umgestellt werden:
+
+- **Skripte** (JavaScript-/Blockly-Adapter): `getState`, `setState`, `on({id: …})`, Trigger
+- **VIS / Visualisierungen**: Widget-Bindings und Datenpunkt-Auswahl
+- **History / InfluxDB / SQL**: die Logging-Aktivierung hängt am Objekt und muss auf den neuen
+  Objekten neu gesetzt werden — bereits aufgezeichnete Reihen bleiben unter dem alten Namen liegen
+- **Alexa / IoT / Material / Szenen**: alle Verknüpfungen auf die neuen IDs zeigen lassen
+- **Aliase** (`alias.0.*`): Quell-ID anpassen
+
+In Skripten genügt meist ein Suchen-und-Ersetzen von `goodwe.0.` nach `goodwe-ai.0.`.
+
+### Empfohlenes Vorgehen
+
+1. Neuen Adapter installieren und eine Instanz anlegen.
+2. Konfiguration (Protokoll, IP, Unit ID, Poll-Intervall, Timeout) aus der alten Instanz übernehmen
+   — die Einstellungen werden **nicht** mitgenommen.
+3. Prüfen, dass `goodwe-ai.0.info.connection` = `true` ist und die States gefüllt werden.
+4. Skripte, VIS und History wie oben umstellen.
+5. Erst danach die alte Instanz stoppen, löschen und den alten Adapter deinstallieren.
+
+Wer die Historie behalten will, lässt die alte Instanz zunächst gestoppt stehen — die Objekte unter
+`goodwe.0.*` samt aufgezeichneter Werte bleiben erhalten, bis der alte Adapter deinstalliert wird.
 
 ---
 
@@ -58,7 +101,7 @@ Oder über die ioBroker Admin-Oberfläche: Adapter → + → „goodwe".
 
 ## Datenpunkte
 
-Alle Datenpunkte unter `goodwe.<instanz>.<gruppe>.<name>`.
+Alle Datenpunkte unter `goodwe-ai.<instanz>.<gruppe>.<name>`.
 
 ### info
 | Datenpunkt | Beschreibung |
@@ -168,12 +211,25 @@ Alle Datenpunkte unter `goodwe.<instanz>.<gruppe>.<name>`.
 ### Adapter startet nicht
 ```bash
 cd /opt/iobroker
-npm install --prefix node_modules/iobroker.goodwe
+npm install --prefix node_modules/iobroker.goodwe-ai
 ```
 
 ---
 
 ## Changelog
+
+### 0.3.0
+- **BREAKING: Adapter von `goodwe` in `goodwe-ai` umbenannt.** Alle Objekt-IDs wandern von
+  `goodwe.0.*` nach `goodwe-ai.0.*`. Skripte, VIS-Views, History-/InfluxDB-Logging, Aliase und
+  Szenen müssen von Hand umgestellt werden — siehe Abschnitt
+  [Migration](#migration-von-goodwe0-nach-goodwe-ai0). Die alte Instanz wird nicht automatisch
+  migriert.
+- npm-Paket heißt jetzt `iobroker.goodwe-ai`, Repository `RaigK/ioBroker.goodwe-ai`.
+- Fix (UDP-Transport): Verspätete oder doppelte Antworten des Wi-Fi-Kit wurden bisher als Antwort
+  auf den *aktuellen* Request gewertet, was Registerwerte gegeneinander verschieben konnte. Ein
+  Datagramm wird jetzt per `classifyReply` gegen den laufenden Request geprüft: unpassende
+  Antworten werden verworfen und weiter gewartet, beschädigte sofort erneut angefragt.
+- Register-Map und Schreibpfad unverändert.
 
 ### 0.2.1
 - UDP 8899 Transport End-to-End gegen einen GW10K-ET mit altem Wi-Fi-Kit Dongle (Firmware V1.0.3.8) verifiziert. Alle States werden befüllt; keine Code-Änderungen gegenüber 0.2.0.
