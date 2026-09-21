@@ -9,7 +9,16 @@
       "Bash(cmd.exe:*)",
       "Bash(echo \"exit: $?\")",
       "Bash(node_modules/.bin/mocha:*)",
-      "Bash(git:*)"
+      "Bash(git:*)",
+      "PowerShell(Test-NetConnection *)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "WebFetch(domain:github.com)",
+      "PowerShell(npx mocha tests/transport-udp.test.js --timeout 10000 2>&1 | Select-Object -Last 50)",
+      "PowerShell(Get-Command *)",
+      "PowerShell(winget *)",
+      "PowerShell(npm *)",
+      "PowerShell(npm install *)",
+      "PowerShell(npm test *)"
     ]
   }
 }

@@ -7,6 +7,7 @@ const {
     buildWriteSingleRequest,
     buildWriteMultipleRequest,
     parseResponse,
+    classifyReply,
 } = require('../lib/transport-udp');
 
 describe('Modbus CRC16', () => {
@@ -89,10 +90,10 @@ function buildReadResponse(unitId, words, prefix = [0xAA, 0x55]) {
     ]);
 }
 
-function buildWriteResponse(unitId, address, value, prefix = [0xAA, 0x55]) {
+function buildWriteResponse(unitId, address, value, prefix = [0xAA, 0x55], fc = 0x06) {
     const inv = Buffer.alloc(6);
     inv[0] = unitId;
-    inv[1] = 0x06;
+    inv[1] = fc;
     inv.writeUInt16BE(address, 2);
     inv.writeUInt16BE(value, 4);
     const crc = crc16Modbus(inv);
@@ -169,5 +170,120 @@ describe('parseResponse', () => {
         const frame = buildWriteResponse(0xF7, 47000, 1);
         expect(() => parseResponse(frame, { unitId: 0xF7, fc: 0x06, address: 47001 }))
             .to.throw(/address mismatch/);
+    });
+});
+
+describe('classifyReply', () => {
+    const READ = { unitId: 0xF7, fc: 0x03, count: 2 };
+    const WRITE = { unitId: 0xF7, fc: 0x06, address: 47000 };
+
+    describe('match — hand the datagram to parseResponse', () => {
+        it('accepts a read reply for the request in flight', () => {
+            expect(classifyReply(buildReadResponse(0xF7, [0x1234, 0x5678]), READ)).to.equal('match');
+        });
+
+        it('accepts a write-single reply echoing the expected address', () => {
+            expect(classifyReply(buildWriteResponse(0xF7, 47000, 1), WRITE)).to.equal('match');
+        });
+
+        it('accepts a write-multiple reply echoing the expected address', () => {
+            const expected = { unitId: 0xF7, fc: 0x10, address: 47511 };
+            const frame = buildWriteResponse(0xF7, 47511, 2, [0xAA, 0x55], 0x10);
+            expect(classifyReply(frame, expected)).to.equal('match');
+        });
+
+        it('accepts an exception reply so parseResponse can surface the code', () => {
+            expect(classifyReply(buildExceptionResponse(0xF7, 0x03, 0x02), READ)).to.equal('match');
+        });
+
+        it('accepts a reply regardless of the gateway prefix bytes', () => {
+            const a = buildReadResponse(0xF7, [0x0042, 0x0043], [0x00, 0x00]);
+            const b = buildReadResponse(0xF7, [0x0042, 0x0043], [0xFF, 0xFF]);
+            expect(classifyReply(a, READ)).to.equal('match');
+            expect(classifyReply(b, READ)).to.equal('match');
+        });
+    });
+
+    describe('stale — a reply to an earlier request, keep waiting', () => {
+        // The bug this guards: the Wi-Fi-Kit answers block 1 late, the datagram
+        // lands while block 2 is in flight, and its 250 payload bytes get decoded
+        // as block 2 — shifting every register value in that block.
+        it('rejects a late reply to the previous block of the same poll', () => {
+            const block1Late = buildReadResponse(0xF7, new Array(125).fill(0x1111));
+            const block2InFlight = { unitId: 0xF7, fc: 0x03, count: 60 };
+            expect(classifyReply(block1Late, block2InFlight)).to.equal('stale');
+        });
+
+        it('rejects a reply from a different unit ID', () => {
+            expect(classifyReply(buildReadResponse(0x01, [0x0001, 0x0002]), READ)).to.equal('stale');
+        });
+
+        it('rejects a read reply whose byte count belongs to another request', () => {
+            expect(classifyReply(buildReadResponse(0xF7, [0x0001]), READ)).to.equal('stale');
+        });
+
+        it('rejects a read reply while a write is in flight', () => {
+            expect(classifyReply(buildReadResponse(0xF7, [0x0001, 0x0002]), WRITE)).to.equal('stale');
+        });
+
+        it('rejects a write reply echoing a different register address', () => {
+            expect(classifyReply(buildWriteResponse(0xF7, 45252, 1), WRITE)).to.equal('stale');
+        });
+
+        it('rejects a datagram too short to hold a frame', () => {
+            expect(classifyReply(Buffer.from([0xAA, 0x55, 0xF7, 0x03, 0x04]), READ)).to.equal('stale');
+        });
+
+        it('rejects an exception reply with a bad CRC', () => {
+            const frame = buildExceptionResponse(0xF7, 0x03, 0x02);
+            frame[frame.length - 1] ^= 0xFF;
+            expect(classifyReply(frame, READ)).to.equal('stale');
+        });
+
+        it('rejects a function code the client never sends', () => {
+            const frame = buildReadResponse(0xF7, [0x0001, 0x0002]);
+            frame[3] = 0x04; // read input registers
+            expect(classifyReply(frame, { unitId: 0xF7, fc: 0x04, count: 2 })).to.equal('stale');
+        });
+    });
+
+    describe('broken — addressed to this request but damaged, retry now', () => {
+        it('rejects a read reply with a tampered CRC', () => {
+            const frame = buildReadResponse(0xF7, [0x1234, 0x5678]);
+            frame[frame.length - 1] ^= 0xFF;
+            expect(classifyReply(frame, READ)).to.equal('broken');
+        });
+
+        it('rejects a read reply truncated mid-payload', () => {
+            const frame = buildReadResponse(0xF7, [0x1234, 0x5678]);
+            expect(classifyReply(frame.subarray(0, frame.length - 3), READ)).to.equal('broken');
+        });
+
+        it('rejects a write reply with a tampered CRC', () => {
+            const frame = buildWriteResponse(0xF7, 47000, 1);
+            frame[frame.length - 1] ^= 0xFF;
+            expect(classifyReply(frame, WRITE)).to.equal('broken');
+        });
+
+        it('rejects a write reply one byte short of a full frame', () => {
+            const frame = buildWriteResponse(0xF7, 47000, 1);
+            expect(classifyReply(frame.subarray(0, 9), WRITE)).to.equal('broken');
+        });
+    });
+
+    it('accepts a non-Buffer datagram', () => {
+        const frame = buildReadResponse(0xF7, [0x1234, 0x5678]);
+        expect(classifyReply(new Uint8Array(frame), READ)).to.equal('match');
+    });
+
+    it('every match verdict is something parseResponse can actually handle', () => {
+        const cases = [
+            [buildReadResponse(0xF7, [0x1234, 0x5678]), READ],
+            [buildWriteResponse(0xF7, 47000, 1), WRITE],
+        ];
+        for (const [frame, expected] of cases) {
+            expect(classifyReply(frame, expected)).to.equal('match');
+            expect(() => parseResponse(frame, expected)).to.not.throw();
+        }
     });
 });

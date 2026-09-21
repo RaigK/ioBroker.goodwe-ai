@@ -1,0 +1,196 @@
+diff --git a/lib/transport-udp.js b/lib/transport-udp.js
+index 368364c..b6220a1 100644
+--- a/lib/transport-udp.js
++++ b/lib/transport-udp.js
+@@ -205,6 +205,12 @@ function crcOk(data, crcOffset) {
+     return crc16Modbus(data, 2, crcOffset) === (data[crcOffset] | (data[crcOffset + 1] << 8));
+ }
+ 
++function closedError() {
++    const err = new Error('UDP client closed');
++    err.closed = true;
++    return err;
++}
++
+ class GoodweUdpClient {
+     constructor() {
+         this.socket = null;
+@@ -218,6 +224,7 @@ class GoodweUdpClient {
+         this._pendingReject = null;
+         this._pendingTimer = null;
+         this._pendingExpected = null;
++        this._closed = false;
+     }
+ 
+     async connectUDP(host, options = {}) {
+@@ -263,7 +270,7 @@ class GoodweUdpClient {
+                     return await this._sendOnce(frame, expected);
+                 } catch (err) {
+                     lastErr = err;
+-                    if (err.modbusErrorCode !== undefined) throw err;
++                    if (err.modbusErrorCode !== undefined || err.closed) throw err;
+                 }
+             }
+             throw lastErr || new Error('UDP exchange failed');
+@@ -276,6 +283,7 @@ class GoodweUdpClient {
+ 
+     _sendOnce(frame, expected) {
+         return new Promise((resolve, reject) => {
++            if (this._closed) return reject(closedError());
+             if (!this.socket) return reject(new Error('Socket not open'));
+             this._pendingResolve = resolve;
+             this._pendingReject = reject;
+@@ -329,6 +337,12 @@ class GoodweUdpClient {
+     }
+ 
+     close(cb) {
++        this._closed = true;
++        if (this._pendingReject) {
++            const reject = this._pendingReject;
++            this._clearPending();
++            reject(closedError());
++        }
+         if (this.socket) {
+             try { this.socket.close(cb); } catch (e) { /* ignore */ }
+             this.socket = null;
+diff --git a/main.js b/main.js
+index 88e2618..329af4a 100644
+--- a/main.js
++++ b/main.js
+@@ -14,6 +14,7 @@ class GoodweAiAdapter extends utils.Adapter {
+         this.reconnectTimer = null;
+         this.isConnected = false;
+         this.isPolling = false;
++        this.unloaded = false;
+         this.reconnectAttempts = 0;
+         this.maxReconnectAttempts = 10;
+ 
+@@ -133,14 +134,16 @@ class GoodweAiAdapter extends utils.Adapter {
+     }
+ 
+     async poll() {
+-        if (this.isPolling || !this.isConnected) return;
++        if (this.unloaded || this.isPolling || !this.isConnected) return;
+         this.isPolling = true;
+ 
+         try {
+             await this.readAllRegisters();
++            if (this.unloaded) return;
+             await this.calculateDerivedValues();
+             this.setState('info.lastUpdate', new Date().toISOString(), true);
+         } catch (err) {
++            if (this.unloaded) return;
+             this.log.error(`Polling error: ${err.message}`);
+             this.isConnected = false;
+             this.setState('info.connection', false, true);
+@@ -165,6 +168,7 @@ class GoodweAiAdapter extends utils.Adapter {
+         ];
+ 
+         for (const block of blocks) {
++            if (this.unloaded) return;
+             const regsInBlock = Object.values(REGISTERS)
+                 .filter(r => r.address >= block.start && r.address < block.start + block.count);
+             if (regsInBlock.length === 0) continue;
+@@ -174,6 +178,7 @@ class GoodweAiAdapter extends utils.Adapter {
+                 const result = await this.modbusClient.readHoldingRegisters(block.start, block.count);
+                 await this.processRegisters(regsInBlock, result.data, block.start);
+             } catch (err) {
++                if (this.unloaded) return; // adapter is shutting down, the closed socket is expected
+                 this.log.warn(`Fehler beim Lesen ${block.label} (${block.start}): ${err.message}`);
+             }
+             await this.sleep(300);
+@@ -320,6 +325,7 @@ class GoodweAiAdapter extends utils.Adapter {
+     }
+ 
+     async onUnload(callback) {
++        this.unloaded = true;
+         try {
+             if (this.pollingTimer) clearInterval(this.pollingTimer);
+             if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+diff --git a/tests/transport-udp-close.test.js b/tests/transport-udp-close.test.js
+new file mode 100644
+index 0000000..61cb98a
+--- /dev/null
++++ b/tests/transport-udp-close.test.js
+@@ -0,0 +1,81 @@
++'use strict';
++
++const dgram = require('dgram');
++const { expect } = require('chai');
++const { GoodweUdpClient } = require('../lib/transport-udp');
++
++// UDP server that swallows every request, so a request stays in flight until the client gives up.
++function silentServer() {
++    const server = dgram.createSocket('udp4');
++    const received = [];
++    server.on('message', msg => received.push(msg));
++    return new Promise(resolve => {
++        server.bind(0, '127.0.0.1', () => resolve({ server, received, port: server.address().port }));
++    });
++}
++
++describe('GoodweUdpClient.close()', () => {
++    let server;
++    let received;
++    let client;
++    let port;
++
++    beforeEach(async () => {
++        ({ server, received, port } = await silentServer());
++        client = new GoodweUdpClient();
++        await client.connectUDP('127.0.0.1', { port });
++        client.setTimeout(5000);
++    });
++
++    afterEach(() => {
++        client.close();
++        server.close();
++    });
++
++    it('aborts an in-flight request immediately instead of waiting for the timeout', async () => {
++        const started = Date.now();
++        const pending = client.readHoldingRegisters(35100, 125);
++        await new Promise(r => setTimeout(r, 50));
++        client.close();
++
++        const err = await pending.then(() => null, e => e);
++        expect(err, 'request should reject').to.be.an('error');
++        expect(err.closed).to.equal(true);
++        expect(Date.now() - started).to.be.below(1000);
++    });
++
++    it('does not retry a request that was aborted by close()', async () => {
++        const pending = client.readHoldingRegisters(35100, 125);
++        await new Promise(r => setTimeout(r, 50));
++        client.close();
++        await pending.catch(() => {});
++        await new Promise(r => setTimeout(r, 100));
++
++        expect(received, 'only the first attempt may reach the wire').to.have.length(1);
++    });
++
++    it('rejects new requests after close() with a closed error, without sending anything', async () => {
++        client.close();
++        const err = await client.readHoldingRegisters(36000, 60).then(() => null, e => e);
++
++        expect(err).to.be.an('error');
++        expect(err.closed).to.equal(true);
++        expect(err.message).to.not.match(/Socket not open/);
++        expect(received).to.have.length(0);
++    });
++
++    it('rejects requests that were queued behind the in-flight one', async () => {
++        const first = client.readHoldingRegisters(35100, 125);
++        const second = client.readHoldingRegisters(36000, 60);
++        await new Promise(r => setTimeout(r, 50));
++        client.close();
++
++        const [e1, e2] = await Promise.all([
++            first.then(() => null, e => e),
++            second.then(() => null, e => e),
++        ]);
++        expect(e1 && e1.closed).to.equal(true);
++        expect(e2 && e2.closed).to.equal(true);
++        expect(received).to.have.length(1);
++    });
++});
